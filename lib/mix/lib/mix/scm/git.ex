@@ -353,10 +353,32 @@ defmodule Mix.SCM.Git do
   end
 
   defp default_branch() do
-    # Note: the `set-head -a` command requires the remote reference to be
-    # fetched first.
-    git!(["--git-dir=.git", "remote", "set-head", "origin", "-a"])
-    "origin/HEAD"
+    # First try to set origin/HEAD from remote (requires network access).
+    # If that fails (e.g., local file:// remotes), fall back to checking
+    # for common default branch names.
+    args = ["--git-dir=.git", "remote", "set-head", "origin", "-a"]
+    opts = cmd_opts(into: "", stderr_to_stdout: true)
+
+    case System.cmd("git", args, opts) do
+      {_, 0} ->
+        "origin/HEAD"
+
+      _ ->
+        cond do
+          git_ref_exists?("origin/main") -> "origin/main"
+          git_ref_exists?("origin/master") -> "origin/master"
+          true -> git!(args)
+        end
+    end
+  end
+
+  defp git_ref_exists?(ref) do
+    opts = cmd_opts(into: "", stderr_to_stdout: true)
+
+    match?(
+      {_, 0},
+      System.cmd("git", ["--git-dir=.git", "rev-parse", "--verify", "--quiet", ref], opts)
+    )
   end
 
   defp git!(args, into \\ default_into()) do
